@@ -93,6 +93,22 @@
   <!-- Seleção de carta -->
   <div id="cardSelect"></div>
 
+  <!-- Tela de início -->
+<div id="startScreen" style="position:absolute; top:0; left:0; width:100%; height:100%; background:#111; display:flex; flex-direction:column; justify-content:center; align-items:center; z-index:1000;">
+  <h1 style="color:white;">Arena de Sobrevivência</h1>
+  <button onclick="openShop()" style="padding:10px 20px; font-size:20px;">Iniciar Jogo</button>
+  <button onclick="alert('Configurações ainda não disponíveis');" style="padding:10px 20px; font-size:16px; margin-top:10px;">Configurações</button>
+</div>
+
+<!-- Loja -->
+<div id="shopMenu" style="display:none; background:#222; padding:20px; color:white;">
+  <h2>Loja de Armas e Invocações</h2>
+  <div id="shopItems"></div>
+  <div style="margin-top:20px;">
+    <button id="startGameBtn" onclick="startGame()" disabled>Progredir</button>
+  </div>
+</div>
+  
   <!-- Canvas principal do jogo -->
   <canvas id="gameCanvas" width="800" height="600"></canvas>
 
@@ -176,21 +192,66 @@ document.getElementById('left').addEventListener('click', () => keys['ArrowLeft'
 document.getElementById('right').addEventListener('click', () => keys['ArrowRight'] = true);
 document.getElementById('attack').addEventListener('click', () => attack());
 
+function openShop() {
+  document.getElementById("startScreen").style.display = "none";
+  document.getElementById("shopMenu").style.display = "block";
+  setupShop();
+}
+
+// Substitua a lógica antiga por essa
 function setupShop() {
-  const weaponDiv = document.getElementById("weaponOptions");
+  const shopItems = document.getElementById("shopItems");
+  shopItems.innerHTML = '';
+  const shopContent = [];
+
+  shopContent.push('<h3>Armas</h3>');
   weapons.forEach(w => {
-    const btn = document.createElement("button");
-    btn.innerText = `${w.name} (${w.cost} moedas)`;
-    btn.onclick = () => {
-      if (playerData.weapon) return;
-      if (playerData.coins >= w.cost) {
-        playerData.weapon = w;
-        playerData.coins -= w.cost;
-        updateCoins();
-      }
-    };
-    weaponDiv.appendChild(btn);
+    shopContent.push(`
+      <button onclick="selectWeapon('${w.name}')" style="margin:5px;">
+        ${w.name} (${w.cost} moedas)
+      </button>`);
   });
+
+  shopContent.push('<h3>Invocações</h3>');
+  summons.forEach(s => {
+    shopContent.push(`
+      <button onclick="selectSummon('${s.name}')" style="margin:5px;">
+        ${s.name} (${s.cost} moedas)
+      </button>`);
+  });
+
+  shopContent.push(`<div style="margin-top:10px;">Moedas: <span id="coinCount">${playerData.coins}</span></div>`);
+  shopItems.innerHTML = shopContent.join('');
+}
+
+function selectWeapon(name) {
+  const w = weapons.find(w => w.name === name);
+  if (playerData.coins >= w.cost) {
+    playerData.weapon = w;
+    playerData.coins -= w.cost;
+    document.getElementById("coinCount").innerText = playerData.coins;
+    checkShopReady();
+  } else {
+    alert("Moedas insuficientes.");
+  }
+}
+
+function selectSummon(name) {
+  const s = summons.find(s => s.name === name);
+  if (playerData.coins >= s.cost) {
+    playerData.summon = s;
+    playerData.coins -= s.cost;
+    document.getElementById("coinCount").innerText = playerData.coins;
+    checkShopReady();
+  } else {
+    alert("Moedas insuficientes.");
+  }
+}
+
+function checkShopReady() {
+  const startBtn = document.getElementById("startGameBtn");
+  if (playerData.weapon) startBtn.disabled = false;
+    }
 
   const summonDiv = document.getElementById("summonOptions");
   summonsData.forEach(s => {
