@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -6,27 +5,98 @@
   <title>Jogo 2D - Arena de Sobrevivência</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    body { margin: 0; background: #111; color: #fff; font-family: sans-serif; text-align: center; overflow: hidden; }
-    canvas { background: #222; display: block; margin: 0 auto; }
-    #ui, #shopMenu, #cardSelect { position: absolute; top: 10px; left: 10px; z-index: 10; }
-    .bar { width: 200px; height: 16px; background: #444; margin: 5px auto; border-radius: 8px; overflow: hidden; }
-    .bar-inner { height: 100%; background: red; width: 100%; transition: width 0.2s; }
+    html, body {
+      margin: 0; padding: 0;
+      background: #111; color: #fff;
+      font-family: sans-serif;
+      overflow: hidden;
+    }
+    canvas {
+      background: #222;
+      display: block;
+      margin: 0 auto;
+    }
+    #ui, #shop, #cardSelect {
+      position: absolute;
+      top: 10px; left: 10px; right: 10px;
+      background: rgba(0,0,0,0.8);
+      padding: 10px;
+      z-index: 10;
+      display: none;
+    }
+    .bar {
+      width: 100%; height: 16px;
+      background: #444;
+      border-radius: 8px;
+      overflow: hidden;
+      margin-bottom: 5px;
+    }
+    .bar-inner {
+      height: 100%;
+      background: red;
+      width: 100%;
+      transition: width 0.2s;
+    }
     #xpBar { background: blue; }
-    #controls { position: fixed; bottom: 10px; left: 10px; z-index: 20; }
-    #controls button { width: 60px; height: 60px; margin: 5px; font-size: 24px; }
+    #controls {
+      position: fixed;
+      bottom: 10px;
+      left: 10px;
+      z-index: 20;
+    }
+    #controls button {
+      width: 60px;
+      height: 60px;
+      margin: 5px;
+      font-size: 24px;
+    }
+    button {
+      padding: 6px 12px;
+      margin: 5px;
+      background: #444;
+      color: white;
+      border: none;
+      border-radius: 5px;
+    }
+    .card {
+      background: #333;
+      margin: 5px;
+      padding: 10px;
+      display: inline-block;
+      cursor: pointer;
+      border: 2px solid #666;
+    }
+    .card:hover {
+      border-color: yellow;
+    }
   </style>
 </head>
 <body>
-  <!-- Interface UI e loja aparecem aqui -->
-  <div id="shopMenu">
-    <!-- Loja e compra de armas/invocações será inserida aqui -->
+
+<!-- Loja de seleção inicial -->
+  <div id="shop">
+    <h3>Escolha uma arma (1):</h3>
+    <div id="weaponOptions"></div>
+    <h3>Escolha uma invocação (1):</h3>
+    <div id="summonOptions"></div>
+    <div><strong>Moedas:</strong> <span id="coinCount">30</span></div>
+    <button onclick="startGame()">Iniciar Jogo</button>
   </div>
-  <div id="ui" style="display:none;">
+
+  <!-- HUD de jogo -->
+  <div id="ui">
     <div class="bar"><div id="hpBar" class="bar-inner"></div></div>
     <div class="bar"><div id="xpBar" class="bar-inner"></div></div>
     <div id="info">Fase: 1 | Nível: 1 | XP: 0 | Recorde: 0</div>
   </div>
+
+  <!-- Seleção de carta -->
+  <div id="cardSelect"></div>
+
+  <!-- Canvas principal do jogo -->
   <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+  <!-- Controles touch para celular -->
   <div id="controls">
     <button id="up">↑</button><br>
     <button id="left">←</button>
@@ -36,32 +106,586 @@
   </div>
 
   <script>
-    // Aqui vai todo o JavaScript completo do jogo
-    // Incluindo: playerData, lógica do jogo, ataques, fases, loja, invocações, etc.
-    // Este é apenas um modelo simplificado por causa do espaço. Posso gerar o completo em arquivo novamente.
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
 
-    // Exemplo de variável para início do jogo:
-    let playerData = {
-      weapon: null,
-      summon: null,
-      coins: 30,
-      hp: 100,
-      maxHp: 100,
-      xp: 0,
-      level: 1,
-      record: 0
+const playerData = {
+  weapon: null,
+  summon: null,
+  coins: 30,
+  hp: 100,
+  maxHp: 100,
+  xp: 0,
+  level: 1,
+  record: 0,
+  x: 400,
+  y: 300,
+  size: 20,
+  speed: 2,
+  attackCooldown: 0,
+  lanceCooldown: 0,
+};
+
+let enemies = [];
+let summons = [];
+let projectiles = [];
+let currentStage = 1;
+let defeated = false;
+let keys = {};
+let cards = [];
+let bossActive = false;
+
+const weapons = [
+  { name: "Espada", cost: 10, damage: 10, critChance: 0.2, speed: 200, range: 40, arc: true },
+  { name: "Machado", cost: 20, damage: 20, critChance: 0.1, speed: 600, range: 60, arc: true, stun: true },
+  { name: "Lança", cost: 30, damage: 18, critChance: 0.1, speed: 500, range: 70, pierce: true, dash: true },
+  { name: "Pistola", cost: 10, damage: 12, critChance: 0.3, speed: 100, range: 400, projectile: true },
+  { name: "Laser", cost: 30, damage: 10, critChance: 0.1, speed: 100, range: 600, pierce: true, weaken: true },
+  { name: "Escopeta", cost: 20, damage: 25, critChance: 0.05, speed: 700, range: 100, spread: true, stun: true }
+];
+
+const summonsData = [
+  { name: "Fada", cost: 10, type: "heal" },
+  { name: "Demônio", cost: 20, type: "curse" },
+  { name: "Anjo", cost: 20, type: "aoe" }
+];
+
+function spawnEnemy(type = "melee") {
+  const size = 20;
+  const hp = type === "melee" ? 20 + currentStage * 2 : 10 + currentStage;
+  const dmg = type === "melee" ? 3 + Math.floor(currentStage / 3) : 5 + Math.floor(currentStage / 2);
+  const x = Math.random() < 0.5 ? 0 : canvas.width;
+  const y = Math.random() * canvas.height;
+  enemies.push({ x, y, size, hp, type, dmg });
+}
+
+function spawnBoss() {
+  bossActive = true;
+  const size = 50;
+  const hp = (20 + currentStage * 2) * 5;
+  const dmg = 5 + Math.floor(currentStage / 2);
+  enemies.push({ x: canvas.width / 2, y: 50, size, hp, type: "boss", dmg, cooldown: 0, dashStage: 0 });
+}
+
+document.addEventListener('keydown', (e) => keys[e.key] = true);
+document.addEventListener('keyup', (e) => keys[e.key] = false);
+
+document.getElementById('up').addEventListener('click', () => keys['ArrowUp'] = true);
+document.getElementById('down').addEventListener('click', () => keys['ArrowDown'] = true);
+document.getElementById('left').addEventListener('click', () => keys['ArrowLeft'] = true);
+document.getElementById('right').addEventListener('click', () => keys['ArrowRight'] = true);
+document.getElementById('attack').addEventListener('click', () => attack());
+
+function setupShop() {
+  const weaponDiv = document.getElementById("weaponOptions");
+  weapons.forEach(w => {
+    const btn = document.createElement("button");
+    btn.innerText = `${w.name} (${w.cost} moedas)`;
+    btn.onclick = () => {
+      if (playerData.weapon) return;
+      if (playerData.coins >= w.cost) {
+        playerData.weapon = w;
+        playerData.coins -= w.cost;
+        updateCoins();
+      }
     };
+    weaponDiv.appendChild(btn);
+  });
 
-    // Função para iniciar o jogo após compras
-    function startGame(weapon, summon) {
-      playerData.weapon = weapon;
-      playerData.summon = summon;
-      document.getElementById("shopMenu").style.display = "none";
-      document.getElementById("ui").style.display = "block";
-      // Inicia lógica do jogo (spawns, movimento, loop, etc.)
+  const summonDiv = document.getElementById("summonOptions");
+  summonsData.forEach(s => {
+    const btn = document.createElement("button");
+    btn.innerText = `${s.name} (${s.cost} moedas)`;
+    btn.onclick = () => {
+      if (playerData.summon) return;
+      if (playerData.coins >= s.cost) {
+        playerData.summon = s;
+        playerData.coins -= s.cost;
+        updateCoins();
+      }
+    };
+    summonDiv.appendChild(btn);
+  });
+
+  updateCoins();
+  }
+
+function updateCoins() {
+  document.getElementById("coinCount").innerText = playerData.coins;
+}
+
+function movePlayer() {
+  if (keys['ArrowUp']) playerData.y -= playerData.speed;
+  if (keys['ArrowDown']) playerData.y += playerData.speed;
+  if (keys['ArrowLeft']) playerData.x -= playerData.speed;
+  if (keys['ArrowRight']) playerData.x += playerData.speed;
+
+  // Limites da tela
+  playerData.x = Math.max(0, Math.min(canvas.width, playerData.x));
+  playerData.y = Math.max(0, Math.min(canvas.height, playerData.y));
+}
+
+function attack() {
+  if (playerData.attackCooldown > 0 || !playerData.weapon) return;
+  playerData.attackCooldown = playerData.weapon.speed;
+  // Criar projétil ou ataque baseado na arma
+  if (playerData.weapon.projectile) {
+    projectiles.push({
+      x: playerData.x,
+      y: playerData.y,
+      dx: 1,
+      dy: 0,
+      size: 6,
+      damage: playerData.weapon.damage,
+      pierce: playerData.weapon.pierce || false,
+    });
+  } else if (playerData.weapon.arc) {
+    enemies.forEach(e => {
+      if (distance(playerData, e) < playerData.weapon.range) {
+        e.hp -= playerData.weapon.damage;
+        if (e.hp <= 0) gainXP(1);
+      }
+    });
+  }
+}
+
+function gainXP(amount) {
+  playerData.xp += amount;
+  const needed = 10 * Math.pow(2, playerData.level - 1);
+  if (playerData.xp >= needed) {
+    playerData.level++;
+    playerData.xp -= needed;
+    openCardSelection();
+  }
+}
+
+function openCardSelection() {
+  document.getElementById("cardSelect").style.display = "block";
+  document.getElementById("cardSelect").innerHTML = "<h3>Escolha um bônus:</h3>";
+  const cardPool = [
+    "Mortal", "Baluarte", "Veloz", "Ágil", "Santidade", "Virtuoso", "Pacto",
+    "Lanceiro", "Maldição", "Radiante", "Pistoleiro", "Abundância"
+  ];
+  let chosen = [];
+  while (chosen.length < 3) {
+    const rand = cardPool[Math.floor(Math.random() * cardPool.length)];
+    if (!chosen.includes(rand)) chosen.push(rand);
+  }
+  chosen.forEach(c => {
+    const btn = document.createElement("div");
+    btn.className = "card";
+    btn.innerText = c;
+    btn.onclick = () => {
+      applyCard(c);
+      document.getElementById("cardSelect").style.display = "none";
+    };
+    document.getElementById("cardSelect").appendChild(btn);
+  });
+}
+
+function applyCard(card) {
+  switch(card) {
+    case "Mortal":
+      playerData.weapon.damage *= 1.2;
+      break;
+    case "Baluarte":
+      playerData.maxHp *= 1.05;
+      playerData.hp = playerData.maxHp;
+      break;
+    case "Veloz":
+      playerData.speed *= 1.1;
+      break;
+    case "Ágil":
+      playerData.weapon.speed *= 0.9;
+      break;
+    case "Santidade":
+      if (!playerData.summon || playerData.summon.name !== "Anjo") {
+        playerData.summon = { name: "Anjo", type: "aoe" };
+      }
+      break;
+    case "Virtuoso":
+      if (!playerData.summon || playerData.summon.name !== "Fada") {
+        playerData.summon = { name: "Fada", type: "heal" };
+      }
+      break;
+    case "Pacto":
+      if (!playerData.summon || playerData.summon.name !== "Demônio") {
+        playerData.summon = { name: "Demônio", type: "curse" };
+      }
+      break;
+    case "Lanceiro":
+      if (!playerData.lanceCooldownReduction) playerData.lanceCooldownReduction = 0;
+      if (playerData.lanceCooldownReduction < 1.5) playerData.lanceCooldownReduction += 0.5;
+      break;
+    case "Maldição":
+      if (!playerData.curseDamageMult) playerData.curseDamageMult = 1;
+      if (playerData.curseDamageMult < 2) playerData.curseDamageMult *= 2;
+      break;
+    case "Radiante":
+      if (!playerData.angelRadiusMult) playerData.angelRadiusMult = 1;
+      playerData.angelRadiusMult *= 1.5;
+      break;
+    case "Pistoleiro":
+      if (!playerData.pistolShots) playerData.pistolShots = 1;
+      playerData.pistolShots++;
+      break;
+    case "Abundância":
+      if (!playerData.fairyHealBoost) playerData.fairyHealBoost = 0;
+      if (playerData.fairyHealBoost < 0.5) playerData.fairyHealBoost += 0.1;
+      break;
+  }
+  updateInfo();
+}
+
+function updateInfo() {
+  document.getElementById('info').innerText =
+    `Fase: ${currentStage} | Nível: ${playerData.level} | XP: ${playerData.xp.toFixed(1)} | Recorde: ${playerData.record}`;
+}
+
+function applyDamageToEnemy(enemy, dmg) {
+  enemy.hp -= dmg;
+  if (enemy.hp <= 0) {
+    enemies = enemies.filter(e => e !== enemy);
+    gainXP(1);
+  }
+}
+
+function gameOver() {
+  defeated = true;
+  if (playerData.record < currentStage) playerData.record = currentStage;
+  alert(`Você morreu! Seu recorde: Fase ${playerData.record}`);
+  location.reload();
+        }
+
+function distance(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function moveTowards(obj, target, speed) {
+  const dx = target.x - obj.x;
+  const dy = target.y - obj.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 1) return;
+  obj.x += (dx / dist) * speed;
+  obj.y += (dy / dist) * speed;
+}
+
+function update() {
+  if (defeated) return;
+
+  movePlayer();
+
+  // Atualiza cooldowns
+  if (playerData.attackCooldown > 0) playerData.attackCooldown -= 16;
+  if (playerData.lanceCooldown > 0) playerData.lanceCooldown -= 16;
+
+  // Atualiza inimigos
+  enemies.forEach(enemy => {
+    if (enemy.type === "melee") {
+      moveTowards(enemy, playerData, 1 + currentStage * 0.1);
+      if (distance(enemy, playerData) < enemy.size + playerData.size) {
+        playerData.hp -= enemy.dmg;
+        if (playerData.hp <= 0) gameOver();
+      }
+    } else if (enemy.type === "ranged") {
+      // Ataque à distância (simplificado)
+      if (!enemy.cooldown) enemy.cooldown = 2000;
+      enemy.cooldown -= 16;
+      if (enemy.cooldown <= 0) {
+        enemy.cooldown = 2000;
+        // Cria projétil em direção ao player
+        projectiles.push({
+          x: enemy.x,
+          y: enemy.y,
+          dx: (playerData.x - enemy.x) / distance(enemy, playerData) * 4,
+          dy: (playerData.y - enemy.y) / distance(enemy, playerData) * 4,
+          size: 5,
+          damage: enemy.dmg,
+          pierce: false,
+        });
+      }
+      // Inimigos de longa distância se movem lentamente ao redor do mapa
+      enemy.x += Math.cos(Date.now() / 1000) * 0.5;
+      enemy.y += Math.sin(Date.now() / 1000) * 0.5;
+    } else if (enemy.type === "boss") {
+      bossBehavior(enemy);
+    }
+  });
+
+  // Atualiza projéteis
+  projectiles = projectiles.filter(p => {
+    p.x += p.dx;
+    p.y += p.dy;
+    // Colisão com player
+    if (distance(p, playerData) < p.size + playerData.size) {
+      playerData.hp -= p.damage;
+      if (playerData.hp <= 0) gameOver();
+      return false;
+    }
+    // Colisão com inimigos (se for projétil do player)
+    if (!p.owner) {
+      enemies.forEach(e => {
+        if (distance(p, e) < p.size + e.size) {
+          applyDamageToEnemy(e, p.damage);
+          return false;
+        }
+      });
+    }
+    // Remove se sair da tela
+    return p.x >= 0 && p.x <= canvas.width && p.y >= 0 && p.y <= canvas.height;
+  });
+
+  // Atualiza invocações
+  updateSummons();
+
+  updateUI();
+
+  // Spawn inimigos gradualmente e níveis
+  if (enemies.length < 20 && !bossActive) {
+    if (Math.random() < 0.01) {
+      const type = Math.random() < 0.5 ? "melee" : "ranged";
+      spawnEnemy(type);
+    }
+  }
+
+  if (currentStage % 20 === 0 && !bossActive && enemies.length === 0) {
+    spawnBoss();
+  }
+
+  requestAnimationFrame(update);
+}
+
+function updateUI() {
+  document.getElementById('hpBar').style.width = (playerData.hp / playerData.maxHp * 100) + '%';
+  document.getElementById('xpBar').style.width = (playerData.xp / (10 * Math.pow(2, playerData.level - 1)) * 100) + '%';
+  updateInfo();
     }
 
-    // O restante do jogo é carregado aqui, se quiser posso enviar um .zip com todos os assets e scripts separados
-  </script>
-</body>
-</html>
+function updateSummons() {
+  if (!playerData.summon) return;
+
+  if (playerData.summon.type === "heal") {
+    // Fada fica perto do jogador e cura
+    if (playerData.hp < playerData.maxHp) {
+      playerData.hp += playerData.maxHp * (0.001 + (playerData.fairyHealBoost || 0));
+      if (playerData.hp > playerData.maxHp) playerData.hp = playerData.maxHp;
+    }
+  } else if (playerData.summon.type === "curse") {
+    // Demônio persegue inimigos próximos e aplica maldição
+    enemies.forEach(enemy => {
+      moveTowards(enemy, playerData, 1); // Demônio segue jogador para simplificar
+      if (distance(enemy, playerData) < 50) {
+        enemy.hp -= playerData.weapon.damage * (playerData.curseDamageMult || 1);
+        // Aplica maldição: dano adicional metade do dano do personagem
+        enemy.hp -= (playerData.weapon.damage / 2) * (playerData.curseDamageMult || 1);
+        if (enemy.hp <= 0) gainXP(1);
+      }
+    });
+  } else if (playerData.summon.type === "aoe") {
+    // Anjo atrai inimigos e causa dano em área
+    enemies.forEach(enemy => {
+      const radius = 100 * (playerData.angelRadiusMult || 1);
+      if (distance(enemy, playerData) < radius) {
+        // Atrai inimigos para perto do jogador
+        moveTowards(enemy, playerData, 0.5);
+        enemy.hp -= playerData.weapon.damage;
+        if (enemy.hp <= 0) gainXP(1);
+      }
+    });
+  }
+}
+
+function lanceDash() {
+  if (playerData.lanceCooldown > 0 || playerData.weapon.name !== "Lança") return;
+  playerData.lanceCooldown = 2000 - ((playerData.lanceCooldownReduction || 0) * 500);
+  // Implementa investida longa com invulnerabilidade
+  let dashTime = 300;
+  let startX = playerData.x;
+  let startY = playerData.y;
+  let dashDistance = 150;
+
+  let start = null;
+  function dashStep(timestamp) {
+    if (!start) start = timestamp;
+    let progress = timestamp - start;
+    let factor = progress / dashTime;
+    if (factor > 1) factor = 1;
+    playerData.x = startX + dashDistance * factor;
+    // Durante o dash o jogador fica invulnerável (simplificado)
+    if (progress < dashTime) {
+      requestAnimationFrame(dashStep);
+    }
+  }
+  requestAnimationFrame(dashStep);
+    }
+
+function attack() {
+  if (playerData.attackCooldown > 0 || !playerData.weapon) return;
+  playerData.attackCooldown = playerData.weapon.speed;
+
+  // Direção básica: para a direita (pode melhorar depois)
+  const dirX = 1;
+  const dirY = 0;
+
+  if (playerData.weapon.name === "Machado") {
+    // Ataque em arco forte e lento, empurra e atordoa
+    enemies.forEach(e => {
+      const dist = distance(playerData, e);
+      if (dist < playerData.weapon.range) {
+        e.hp -= playerData.weapon.damage;
+        // TODO: empurrar e atordoar 0.5s
+        if (e.hp <= 0) gainXP(1);
+      }
+    });
+  } else if (playerData.weapon.name === "Espada") {
+    // Ataque rápido com chance de crítico e arco curto
+    enemies.forEach(e => {
+      const dist = distance(playerData, e);
+      if (dist < playerData.weapon.range) {
+        let dmg = playerData.weapon.damage;
+        if (Math.random() < playerData.weapon.critChance) dmg *= 2;
+        e.hp -= dmg;
+        // TODO: empurrar
+        if (e.hp <= 0) gainXP(1);
+      }
+    });
+  } else if (playerData.weapon.name === "Lança") {
+    // Ataque em linha reta, atravessa inimigos e empurra pouco
+    enemies.forEach(e => {
+      const dist = distance(playerData, e);
+      if (dist < playerData.weapon.range) {
+        e.hp -= playerData.weapon.damage;
+        if (e.hp <= 0) gainXP(1);
+      }
+    });
+    // ataque especial
+    lanceDash();
+  } else if (playerData.weapon.name === "Pistola") {
+    // Dispara projétil rápido de alcance longo, atinge um inimigo
+    for (let e of enemies) {
+      if (distance(playerData, e) < playerData.weapon.range) {
+        let dmg = playerData.weapon.damage;
+        if (Math.random() < playerData.weapon.critChance) dmg *= 2;
+        e.hp -= dmg;
+        if (e.hp <= 0) gainXP(1);
+        break; // só um inimigo
+      }
+    }
+  } else if (playerData.weapon.name === "Laser") {
+    // Feixe atravessa inimigos, dano diminui a cada inimigo
+    let damage = playerData.weapon.damage;
+    enemies.forEach(e => {
+      if (distance(playerData, e) < playerData.weapon.range) {
+        e.hp -= damage;
+        damage = Math.max(damage - 0.1 * playerData.weapon.damage, playerData.weapon.damage * 0.5);
+        if (e.hp <= 0) gainXP(1);
+      }
+    });
+  } else if (playerData.weapon.name === "Escopeta") {
+    // Disparo lento, área grande, empurra e atordoa
+    enemies.forEach(e => {
+      if (distance(playerData, e) < playerData.weapon.range) {
+        e.hp -= playerData.weapon.damage;
+        // TODO: empurrar e atordoar 0.5s
+        if (e.hp <= 0) gainXP(1);
+      }
+    });
+  }
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Desenha jogador
+  ctx.fillStyle = 'cyan';
+  ctx.fillRect(playerData.x - playerData.size / 2, playerData.y - playerData.size / 2, playerData.size, playerData.size);
+
+  // Desenha inimigos
+  enemies.forEach(e => {
+    ctx.fillStyle = (e.type === 'melee') ? 'red' : (e.type === 'ranged') ? 'orange' : 'purple';
+    ctx.fillRect(e.x - e.size / 2, e.y - e.size / 2, e.size, e.size);
+  });
+
+  // Desenha projéteis
+  projectiles.forEach(p => {
+    ctx.fillStyle = 'yellow';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // Desenha invocações (simplificado)
+  if (playerData.summon) {
+    ctx.fillStyle = (playerData.summon.type === 'heal') ? 'green' :
+                    (playerData.summon.type === 'curse') ? 'darkred' : 'lightblue';
+    ctx.beginPath();
+    ctx.arc(playerData.x + 30, playerData.y, 10, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function gameLoop() {
+  update();
+  draw();
+  if (!defeated) requestAnimationFrame(gameLoop);
+}
+
+// Botões touch para celular
+['up','down','left','right','attack'].forEach(id => {
+  const btn = document.getElementById(id);
+  btn.addEventListener('touchstart', e => {
+    e.preventDefault();
+    keys['Arrow' + id.charAt(0).toUpperCase() + id.slice(1)] = true;
+    if(id === 'attack') attack();
+  });
+  btn.addEventListener('touchend', e => {
+    e.preventDefault();
+    keys['Arrow' + id.charAt(0).toUpperCase() + id.slice(1)] = false;
+  });
+});
+
+function startGame() {
+  document.getElementById('shopMenu').style.display = 'none';
+  document.getElementById('ui').style.display = 'block';
+  playerData.hp = playerData.maxHp;
+  playerData.xp = 0;
+  playerData.level = 1;
+  currentStage = 1;
+  defeated = false;
+  enemies = [];
+  projectiles = [];
+  summons = [];
+  playerData.x = canvas.width / 2;
+  playerData.y = canvas.height / 2;
+
+  updateInfo();
+  gameLoop();
+}
+
+function showRecord() {
+  alert(`Fim do jogo! Sua fase máxima: ${playerData.record}`);
+}
+
+window.onload = function() {
+  setupShop();
+
+  // Botão para iniciar o jogo
+  const startBtn = document.createElement('button');
+  startBtn.innerText = "Iniciar Jogo";
+  startBtn.onclick = () => {
+    if (!playerData.weapon) {
+      alert('Escolha uma arma antes de começar!');
+      return;
+    }
+    startGame();
+  };
+  document.getElementById('shopMenu').appendChild(startBtn);
+
+  // Mostrar moedas iniciais
+  const coinLabel = document.createElement('div');
+  coinLabel.id = "coinCount";
+  coinLabel.style.color = 'yellow';
+  coinLabel.style.marginTop = '10px';
+  coinLabel.innerText = playerData.coins;
+  document.getElementById('shopMenu').appendChild(coinLabel);
+};
